@@ -10,15 +10,12 @@ const JWT_SECRET = process.env.JWT_SECRET || "super_secret_key_a_changer";
 export const register = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
-
     if (!email || !password) {
       return res.status(400).json({ message: "Champs manquants" });
     }
-
     const existingUser = await db.query.users.findFirst({
       where: eq(users.email, email),
     });
-
     if (existingUser) {
       return res
         .status(400)
@@ -83,5 +80,23 @@ export const login = async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Erreur serveur" });
+  }
+};
+
+export const updateProfile = async (req: Request, res: Response) => {
+  try {
+    // L'ID vient du middleware qui décode le token (ex: req.user.id)
+    const userId = (req as any).user.id;
+    const { nom, ecole, filiere, niveau, specialisation } = req.body;
+
+    await db
+      .update(users)
+      .set({ nom, ecole, filiere, niveau, specialisation })
+      .where(eq(users.id, userId));
+
+    res.status(200).json({ message: "Profil complété avec succès !" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Erreur lors de la mise à jour" });
   }
 };
