@@ -1,5 +1,7 @@
 import type { Request, Response } from "express";
-import prisma from "../../lib/prisma.js";
+import { db } from "../../db/index.js";
+import { users } from "../../db/schema.js";
+import { eq } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
@@ -9,33 +11,42 @@ export const register = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
-    //Validation
     if (!email || !password) {
       return res.status(400).json({ message: "Champs manquants" });
     }
 
-    //Vérifier si l'utilisateur existe déjà
-    const existingUser = await prisma.user.findUnique({ where: { email } });
-    if (existingUser) {
-      return res.status(400).json({ message: "Cet email est déjà utilisé" });
-    }
-
-    //Hachage du mot de passe
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    //Création dans la DB
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-      },
+    const existingUser = await db.query.users.findFirst({
+      where: eq(users.email, email),
     });
 
-    res
-      .status(201)
-      .json({ message: "Utilisateur créé avec succès", userId: user.id });
+    if (existingUser) {
+      return res
+        .status(400)
+        .json({ message: "Compte existant. Connectez-vous" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const [result] = await db.insert(users).values({
+      email,
+      password: hashedPassword,
+    });
+
+    const token = jwt.sign({ userId: result.insertId }, JWT_SECRET, {
+      expiresIn: "7d",
+    });
+
+    res.status(201).json({
+      message: "Utilisateur créé avec succès",
+      token,
+      user: {
+        id: result.insertId,
+        email: email,
+      },
+    });
   } catch (error) {
-    res.status(500).json({ message: "Erreur serveur", error });
+    console.error(error);
+    res.status(500).json({ message: "Erreur serveur" });
   }
 };
 
@@ -43,24 +54,23 @@ export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
-    //Validation
     if (!email || !password) {
       return res.status(400).json({ message: "Champs requis" });
     }
 
-    //Trouver l'utilisateur
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await db.query.users.findFirst({
+      where: eq(users.email, email),
+    });
+
     if (!user) {
       return res.status(401).json({ message: "Identifiants invalides" });
     }
 
-    //Vérifier le mot de passe
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       return res.status(401).json({ message: "Identifiants invalides" });
     }
 
-    //Création du Token de session (JWT)
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, {
       expiresIn: "7d",
     });
@@ -71,6 +81,7 @@ export const login = async (req: Request, res: Response) => {
       user: { id: user.id, email: user.email },
     });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
