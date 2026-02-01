@@ -1,54 +1,53 @@
 import { db } from "../../db/index.js";
-import { posts, resources, media } from ".././../db/schema.js";
+import type { Request as ExpressRequest, Response } from "express";
+import { resources, resourceAttachments } from "../../db/schema.js";
 
-export const shareContent = async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.id;
-    const { content, type, details: detailsRaw } = req.body;
-    const files = req.files as Express.Multer.File[];
+export const createResource = async (req: ExpressRequest, res: Response) => {
+  await db.transaction(async (tx) => {
+    try {
+      const { content, type, title, detailsType, professor, year } = req.body;
+      const userId = req.user?.id;
 
-    let parentId;
-    let category;
+      if (!userId) throw new Error("Utilisateur non authentifié");
 
-    if (type === "post") {
-      const [newPost] = await db
-        .insert(posts)
-        .values({ userId, content })
-        .returning();
-      parentId = newPost.id;
-      category = "post";
-    } else {
-      const details = JSON.parse(detailsRaw);
-      const [newRes] = await db
+      const [newResourceHeader] = await tx
         .insert(resources)
         .values({
           userId,
-          title: details.title,
-          type: type, // 'epreuve' or 'cours'
-          subType: details.type, // SN1, SN2...
-          professor: details.professor,
-          year: parseInt(details.year),
-          description: content,
+          type,
+          content,
+          title: title || null,
+          level: detailsType || null,
+          professor: professor || null,
+          year: year ? parseInt(year) : null,
         })
-        .returning();
-      parentId = newRes.id;
-      category = "resource";
-    }
+        .$returningId();
 
-    // Stockage des fichiers dans la table Media
-    if (files && files.length > 0) {
-      const mediaValues = files.map((file) => ({
-        parentId,
-        category,
-        url: file.path,
-        fileType: file.mimetype,
-      }));
-      await db.insert(media).values(mediaValues);
-    }
+      const resourceId = newResourceHeader?.id;
 
-    res.json({ message: "Publié avec succès !" });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "Erreur lors du partage" });
-  }
+      if (!resourceId)
+        throw new Error("Erreur lors de la création de la ressource");
+
+      const files = req.files as Express.Multer.File[];
+
+      if (files && files.length > 0) {
+        const attachmentsToInsert = files.map((file) => ({
+          resourceId: resourceId,
+          filePath: file.path.replace(/\\/g, "/"), // Normalise les slashs pour Windows/Linux
+          fileName: file.originalname,
+          fileType: file.mimetype,
+        }));
+
+        await tx.insert(resourceAttachments).values(attachmentsToInsert);
+      }
+
+      return res.status(201).json({
+        message: "Ressource publiée avec succès !",
+        resourceId,
+      });
+    } catch (error) {
+      console.error("Erreur création ressource:", error);
+      return res.status(500).json({ error: "Erreur lors de la publication" });
+    }
+  });
 };

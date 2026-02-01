@@ -4,8 +4,8 @@ import { authenticateToken } from "../auth/auth.middlewares.js";
 import multer from "multer";
 
 const upload = multer({
-  dest: "uploads/profiles/", // Assure-toi que ce dossier existe à la racine de ton projet
-  limits: { fileSize: 2 * 1024 * 1024 }, // Limite à 2Mo par exemple
+  dest: "uploads/profiles/",
+  limits: { fileSize: 10 * 1024 * 1024 },
 });
 
 const router: Router = Router();

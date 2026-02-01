@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import authRoutes from "./services/auth/auth.routes.js";
 import userRoutes from "./services/user/user.routes.js";
+import filesRoutes from "./services/file/files.routes.js";
 import express, {
   type NextFunction,
   type Request,
@@ -29,6 +30,7 @@ app.get("/", (req: Request, res: Response) => {
 
 app.use("/auth", authRoutes);
 app.use("/user", userRoutes);
+app.use("/files", filesRoutes);
 
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error(err);

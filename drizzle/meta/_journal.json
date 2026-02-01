@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1769914584379,
+      "tag": "0000_striped_annihilus",
+      "breakpoints": true
+    }
+  ]
+}
