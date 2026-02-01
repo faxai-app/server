@@ -7,6 +7,8 @@ import {
   text,
   boolean,
   mysqlEnum,
+  bigint,
+  index,
 } from "drizzle-orm/mysql-core";
 import { relations } from "drizzle-orm";
 
@@ -25,41 +27,73 @@ export const users = mysqlTable("users", {
 
 export const notifications = mysqlTable("notifications", {
   id: serial("id").primaryKey(),
-  userId: int("user_id").notNull(),
+  // BIGINT UNSIGNED pour matcher users.id (SERIAL = BIGINT UNSIGNED)
+  userId: bigint("user_id", { unsigned: true, mode: "number" })
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   title: varchar("title", { length: 255 }).notNull(),
   message: text("message").notNull(),
-  type: varchar("type", { length: 50 }).default("info"), // info, success, warning
+  type: varchar("type", { length: 50 }).default("info"),
   isRead: boolean("is_read").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Table principale des publications
-export const resources = mysqlTable("resources", {
-  id: serial("id").primaryKey(),
-  userId: int("user_id").notNull(), // Lien vers l'auteur
-  type: mysqlEnum("type", ["post", "epreuve", "cours"]).notNull(),
-  content: text("content"), // Le texte "Exprimez-vous..."
+export const resources = mysqlTable(
+  "resources",
+  {
+    id: serial("id").primaryKey(),
+    // BIGINT UNSIGNED pour matcher users.id
+    userId: bigint("user_id", { unsigned: true, mode: "number" })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: mysqlEnum("type", ["post", "epreuve", "cours"]).notNull(),
+    content: text("content"),
+    title: varchar("title", { length: 255 }),
+    level: int("level"),
+    filiere: varchar("filiere", { length: 100 }),
+    specialisation: varchar("specialisation", { length: 100 }),
+    professor: varchar("professor", { length: 100 }), // Ajouté ici
+    year: int("year"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    userIdx: index("user_id_idx").on(table.userId),
+    levelIdx: index("level_idx").on(table.level),
+    filiereIdx: index("filiere_idx").on(table.filiere),
+    createdAtIdx: index("created_at_idx").on(table.createdAt),
+  }),
+);
 
-  // Champs spécifiques aux cours/épreuves (nullables si c'est juste un post)
-  title: varchar("title", { length: 255 }), // Matière
-  level: varchar("level", { length: 50 }), // SN1, SN2...
-  professor: varchar("professor", { length: 255 }),
-  year: int("year"),
+export const resourceAttachments = mysqlTable(
+  "resource_attachments",
+  {
+    id: serial("id").primaryKey(),
+    // BIGINT UNSIGNED pour matcher resources.id
+    resourceId: bigint("resource_id", { unsigned: true, mode: "number" })
+      .notNull()
+      .references(() => resources.id, { onDelete: "cascade" }),
+    filePath: varchar("file_path", { length: 500 }).notNull(),
+    fileName: varchar("file_name", { length: 255 }).notNull(),
+    fileType: varchar("file_type", { length: 50 }),
+    fileSize: int("file_size"),
+  },
+  (table) => ({
+    resourceIdx: index("resource_id_idx").on(table.resourceId),
+  }),
+);
 
-  createdAt: timestamp("created_at").defaultNow(),
-});
+// Relations
+export const usersRelations = relations(users, ({ many }) => ({
+  resources: many(resources),
+  notifications: many(notifications),
+}));
 
-// Table des fichiers (Relation One-to-Many)
-export const resourceAttachments = mysqlTable("resource_attachments", {
-  id: serial("id").primaryKey(),
-  resourceId: int("resource_id").notNull(),
-  filePath: varchar("file_path", { length: 500 }).notNull(), // Chemin dans le dossier uploads
-  fileName: varchar("file_name", { length: 255 }).notNull(), // Nom d'origine
-  fileType: varchar("file_type", { length: 50 }), // image/jpeg ou application/pdf
-});
-
-// Relations pour Drizzle (facilite les query)
-export const resourcesRelations = relations(resources, ({ many }) => ({
+export const resourcesRelations = relations(resources, ({ one, many }) => ({
+  author: one(users, {
+    fields: [resources.userId],
+    references: [users.id],
+  }),
   attachments: many(resourceAttachments),
 }));
 
