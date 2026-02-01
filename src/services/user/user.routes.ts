@@ -17,6 +17,7 @@ router.put(
   profilePicture
 );
 
+
 router.get("/notifications", authenticateToken, getNotifications);
 
 export default router;
