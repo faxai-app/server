@@ -1,7 +1,14 @@
 // controllers/home.controller.ts
 import { db } from "../../db/index.js";
-import { eq, and, or, desc, inArray, sql, isNull } from "drizzle-orm";
-import { resources, resourceAttachments, users } from "../../db/schema.js";
+import { eq, and, or, desc, inArray, sql, isNull, count } from "drizzle-orm";
+import {
+  resources,
+  resourceAttachments,
+  users,
+  likes,
+  comments,
+  bookmarks,
+} from "../../db/schema.js";
 import type { Request, Response } from "express";
 
 interface AuthenticatedRequest extends Request {
@@ -50,6 +57,8 @@ interface PublicationResponse {
   }[];
 }
 
+// ... (imports identiques)
+
 export const getHomeFeed = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.id;
@@ -58,17 +67,15 @@ export const getHomeFeed = async (req: AuthenticatedRequest, res: Response) => {
     const userSpecialisation = req.user?.specialisation;
 
     if (!userId || !userNiveau || !userFiliere) {
-      return res.status(401).json({
-        error:
-          "Utilisateur non authentifié ou profil incomplet (niveau/filière requis)",
-      });
+      return res.status(401).json({ error: "Profil incomplet" });
     }
 
-    const niveauxAccessibles: number[] = Array.from(
+    const niveauxAccessibles = Array.from(
       { length: userNiveau },
       (_, i) => i + 1,
     );
 
+    // Récupérer les publications
     const publications = await db
       .select({
         id: resources.id,
@@ -78,8 +85,8 @@ export const getHomeFeed = async (req: AuthenticatedRequest, res: Response) => {
         level: resources.level,
         filiere: resources.filiere,
         specialisation: resources.specialisation,
-        professor: resources.professor,
         year: resources.year,
+        commentsCount: resources.commentsCount,
         authorId: resources.userId,
         authorName: users.nom,
         authorProfilePic: users.profilePicture,
@@ -107,95 +114,116 @@ export const getHomeFeed = async (req: AuthenticatedRequest, res: Response) => {
       .limit(50);
 
     if (publications.length === 0) {
-      return res.status(200).json({
-        publications: [],
-        meta: {
-          total: 0,
-          userNiveau,
-          userFiliere,
-          niveauxVisibles: niveauxAccessibles,
-        },
-      });
+      return res.json({ publications: [], meta: { total: 0 } });
     }
 
     const publicationIds = publications.map((p) => p.id);
 
+    // Récupérer les likes de l'utilisateur connecté pour ces posts
+    const userLikes = await db
+      .select({ resourceId: likes.resourceId })
+      .from(likes)
+      .where(
+        and(
+          eq(likes.userId, userId),
+          inArray(likes.resourceId, publicationIds),
+        ),
+      );
+
+    // Récupérer les bookmarks de l'utilisateur
+    const userBookmarks = await db
+      .select({ resourceId: bookmarks.resourceId })
+      .from(bookmarks)
+      .where(
+        and(
+          eq(bookmarks.userId, userId),
+          inArray(bookmarks.resourceId, publicationIds),
+        ),
+      );
+
+    const likedIds = new Set(userLikes.map((l) => l.resourceId));
+    const bookmarkedIds = new Set(userBookmarks.map((b) => b.resourceId));
+
+    // Récupérer les fichiers
     const attachments = await db
       .select()
       .from(resourceAttachments)
       .where(inArray(resourceAttachments.resourceId, publicationIds));
 
-    const formattedPublications: PublicationResponse[] = publications.map(
-      (pub) => {
-        const pubAttachments = attachments.filter(
-          (att) => att.resourceId === pub.id,
-        );
+    // Compter les likes pour chaque post
+    const likesCount = await db
+      .select({ resourceId: likes.resourceId, count: count() })
+      .from(likes)
+      .where(inArray(likes.resourceId, publicationIds))
+      .groupBy(likes.resourceId);
 
-        // ← CORRECTION ICI : URLs absolues pour les images
-        const images = pubAttachments
-          .filter((att) => att.fileType?.startsWith("image/"))
-          .slice(0, 4)
-          .map((img) => {
-            const cleanPath = img.filePath.replace(/\\/g, "/"); // Normalise les slashs
-            return {
-              id: img.id,
-              url: `${BASE_URL}/${cleanPath}`, // URL absolue complète !
-              thumbnail: `${BASE_URL}/${cleanPath}`, // Même chose pour thumbnail
-            };
-          });
+    const likesCountMap = new Map(
+      likesCount.map((l) => [l.resourceId, l.count]),
+    );
 
-        const pdfs = pubAttachments.filter(
-          (att) => att.fileType === "application/pdf",
-        );
+    const formattedPublications = publications.map((pub) => {
+      const pubAttachments = attachments.filter(
+        (att) => att.resourceId === pub.id,
+      );
 
-        const attachmentsMetadata = pubAttachments.map((att) => ({
+      const images = pubAttachments
+        .filter((att) => att.fileType?.startsWith("image/"))
+        .slice(0, 4)
+        .map((img) => ({
+          id: img.id,
+          url: `${BASE_URL}/${img.filePath.replace(/\\/g, "/")}`,
+          thumbnail: `${BASE_URL}/${img.filePath.replace(/\\/g, "/")}`,
+        }));
+
+      const pdfs = pubAttachments.filter(
+        (att) => att.fileType === "application/pdf",
+      );
+
+      return {
+        id: pub.id,
+        content: pub.content,
+        type: pub.type,
+        createdAt: pub.createdAt,
+        author: {
+          id: pub.authorId,
+          name: pub.authorName,
+          profilePicture: pub.authorProfilePic,
+          niveau: pub.authorNiveau,
+          filiere: pub.authorFiliere,
+        },
+        level: {
+          niveau: pub.level,
+          filiere: pub.filiere,
+          specialisation: pub.specialisation,
+          annee: pub.year,
+        },
+        hasMedia: pubAttachments.length > 0,
+        images,
+        pdfCount: pdfs.length,
+        isLiked: likedIds.has(pub.id), // ← AJOUTÉ
+        isBookmarked: bookmarkedIds.has(pub.id), // ← AJOUTÉ
+        likesCount: likesCountMap.get(pub.id) || 0,
+        commentsCount: pub.commentsCount || 0,
+        attachmentsMetadata: pubAttachments.map((att) => ({
           id: att.id,
           fileName: att.fileName,
           fileType: att.fileType,
           fileSize: att.fileSize,
-          isImage: att.fileType ? att.fileType.startsWith("image/") : false,
-        }));
+          isImage: att.fileType?.startsWith("image/") || false,
+        })),
+      };
+    });
 
-        return {
-          id: pub.id,
-          content: pub.content,
-          type: pub.type,
-          createdAt: pub.createdAt,
-          author: {
-            id: pub.authorId,
-            name: pub.authorName,
-            profilePicture: pub.authorProfilePic,
-            niveau: pub.authorNiveau,
-            filiere: pub.authorFiliere,
-          },
-          level: {
-            niveau: pub.level,
-            filiere: pub.filiere,
-            specialisation: pub.specialisation,
-            annee: pub.year,
-          },
-          hasMedia: pubAttachments.length > 0,
-          images,
-          pdfCount: pdfs.length,
-          attachmentsMetadata,
-        };
-      },
-    );
-
-    return res.status(200).json({
+    return res.json({
       publications: formattedPublications,
       meta: {
         total: formattedPublications.length,
         userNiveau,
         userFiliere,
-        niveauxVisibles: niveauxAccessibles,
       },
     });
   } catch (error) {
-    console.error("Erreur récupération feed:", error);
-    return res.status(500).json({
-      error: "Erreur lors de la récupération des publications",
-      details: error instanceof Error ? error.message : "Unknown error",
-    });
+    console.error("Erreur feed:", error);
+    return res.status(500).json({ error: "Erreur serveur" });
   }
 };
