@@ -12,15 +12,15 @@ import {
 const router: Router = Router();
 
 // Likes
-router.post("/:id/like", authenticateToken, toggleLike);
-router.get("/:id/like", authenticateToken, getPostStats); // Pour vérifier si liké/bookmarké
+router.post("/:id/like", authenticateToken as any, toggleLike);
+router.get("/:id/like", authenticateToken as any, getPostStats); // Pour vérifier si liké/bookmarké
 
 // Bookmarks
-router.post("/:id/bookmark", authenticateToken, toggleBookmark);
+router.post("/:id/bookmark", authenticateToken as any, toggleBookmark);
 
 // Commentaires
-router.get("/:id/comments", authenticateToken, getComments);
-router.post("/:id/comments", authenticateToken, addComment);
-router.delete("/comments/:commentId", authenticateToken, deleteComment);
+router.get("/:id/comments", authenticateToken as any, getComments);
+router.post("/:id/comments", authenticateToken as any, addComment);
+router.delete("/comments/:commentId", authenticateToken as any, deleteComment);
 
 export default router;

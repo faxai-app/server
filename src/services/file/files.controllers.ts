@@ -33,7 +33,7 @@ export const createResource = async (req: ExpressRequest, res: Response) => {
       if (files && files.length > 0) {
         const attachmentsToInsert = files.map((file) => ({
           resourceId: resourceId,
-          filePath: file.path.replace(/\\/g, "/"), // Normalise les slashs pour Windows/Linux
+          filePath: file.path.replace(/\\/g, "/"),
           fileName: file.originalname,
           fileType: file.mimetype,
         }));

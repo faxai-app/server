@@ -14,7 +14,8 @@ interface AuthenticatedRequest extends Request {
   };
 }
 
-// Interface alignée avec le schéma (nullable fields)
+const BASE_URL = "http://192.168.8.100:5000"; // ← Suppression de l'espace à la fin
+
 interface PublicationResponse {
   id: number;
   content: string | null;
@@ -63,14 +64,11 @@ export const getHomeFeed = async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    // 1. Déterminer les niveaux accessibles (actuel + antérieurs)
-    // Conversion en nombre pour matcher le type INT en DB
     const niveauxAccessibles: number[] = Array.from(
       { length: userNiveau },
       (_, i) => i + 1,
     );
 
-    // 2. Récupérer les publications filtrées
     const publications = await db
       .select({
         id: resources.id,
@@ -79,7 +77,7 @@ export const getHomeFeed = async (req: AuthenticatedRequest, res: Response) => {
         createdAt: resources.createdAt,
         level: resources.level,
         filiere: resources.filiere,
-        specialisation: resources.specialisation, // ← AJOUTÉ (manquant)
+        specialisation: resources.specialisation,
         professor: resources.professor,
         year: resources.year,
         authorId: resources.userId,
@@ -92,16 +90,11 @@ export const getHomeFeed = async (req: AuthenticatedRequest, res: Response) => {
       .innerJoin(users, eq(resources.userId, users.id))
       .where(
         and(
-          // Filtre par niveau : posts du niveau actuel/antérieurs OU posts généraux (level null)
           or(
             inArray(resources.level, niveauxAccessibles),
             isNull(resources.level),
           ),
-
-          // Filtre par filière : même filière OU posts généraux (filiere null)
           or(eq(resources.filiere, userFiliere), isNull(resources.filiere)),
-
-          // Filtre par spécialisation si définie
           userSpecialisation
             ? or(
                 eq(resources.specialisation, userSpecialisation),
@@ -113,7 +106,6 @@ export const getHomeFeed = async (req: AuthenticatedRequest, res: Response) => {
       .orderBy(desc(resources.createdAt))
       .limit(50);
 
-    // 3. Si pas de publications, retourner tableau vide
     if (publications.length === 0) {
       return res.status(200).json({
         publications: [],
@@ -126,7 +118,6 @@ export const getHomeFeed = async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    // 4. Récupérer les fichiers joints
     const publicationIds = publications.map((p) => p.id);
 
     const attachments = await db
@@ -134,31 +125,29 @@ export const getHomeFeed = async (req: AuthenticatedRequest, res: Response) => {
       .from(resourceAttachments)
       .where(inArray(resourceAttachments.resourceId, publicationIds));
 
-    // 5. Formatter la réponse
     const formattedPublications: PublicationResponse[] = publications.map(
       (pub) => {
         const pubAttachments = attachments.filter(
           (att) => att.resourceId === pub.id,
         );
 
-        // Séparer images et PDFs avec vérification null safety
+        // ← CORRECTION ICI : URLs absolues pour les images
         const images = pubAttachments
           .filter((att) => att.fileType?.startsWith("image/"))
           .slice(0, 4)
-          .map((img) => ({
-            id: img.id,
-            url: img.filePath,
-            thumbnail: img.filePath.replace(
-              /\.(jpg|jpeg|png|webp)$/i,
-              "_thumb.$1",
-            ),
-          }));
+          .map((img) => {
+            const cleanPath = img.filePath.replace(/\\/g, "/"); // Normalise les slashs
+            return {
+              id: img.id,
+              url: `${BASE_URL}/${cleanPath}`, // URL absolue complète !
+              thumbnail: `${BASE_URL}/${cleanPath}`, // Même chose pour thumbnail
+            };
+          });
 
         const pdfs = pubAttachments.filter(
           (att) => att.fileType === "application/pdf",
         );
 
-        // Métadonnées pour l'indicateur
         const attachmentsMetadata = pubAttachments.map((att) => ({
           id: att.id,
           fileName: att.fileName,

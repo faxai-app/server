@@ -43,7 +43,7 @@ export const resources = mysqlTable(
     specialisation: varchar("specialisation", { length: 100 }),
     professor: varchar("professor", { length: 100 }),
     year: int("year"),
-    commentsCount: int("comments_count").default(0),
+    commentsCount: int("comments_count").default(0), // ← AJOUTÉ ICI
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
   },
@@ -100,10 +100,7 @@ export const bookmarks = mysqlTable(
     createdAt: timestamp("created_at").defaultNow(),
   },
   (table) => ({
-    uniqueBookmark: uniqueIndex("unique_bookmark").on(
-      table.userId,
-      table.resourceId,
-    ),
+    uniqueBookmark: uniqueIndex("unique_bookmark").on(table.userId, table.resourceId),
   }),
 );
 
@@ -147,7 +144,7 @@ export const resourceAttachments = mysqlTable(
 );
 
 // ==========================================
-// RELATIONS (toutes définies à la fin)
+// RELATIONS (UNIQUEMENT À LA FIN, SANS DOUBLONS)
 // ==========================================
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -158,6 +155,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   comments: many(comments),
 }));
 
+// ATTENTION : Une seule déclaration de resourcesRelations !
 export const resourcesRelations = relations(resources, ({ one, many }) => ({
   author: one(users, {
     fields: [resources.userId],

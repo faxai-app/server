@@ -12,12 +12,11 @@ const router: Router = Router();
 
 router.put(
   "/profile-picture",
-  authenticateToken,
+  authenticateToken as any,
   upload.single("profilePicture"),
-  profilePicture
+  profilePicture,
 );
 
-
-router.get("/notifications", authenticateToken, getNotifications);
+router.get("/notifications", authenticateToken as any, getNotifications);
 
 export default router;
