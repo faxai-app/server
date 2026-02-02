@@ -38,7 +38,7 @@ export const resources = mysqlTable(
     type: mysqlEnum("type", ["post", "epreuve", "cours"]).notNull(),
     content: text("content"),
     title: varchar("title", { length: 255 }),
-    level: int("level"),
+    level: varchar("level", { length: 10 }),
     filiere: varchar("filiere", { length: 100 }),
     specialisation: varchar("specialisation", { length: 100 }),
     professor: varchar("professor", { length: 100 }),
